@@ -1,0 +1,991 @@
+---
+title: "Mobilnost turista i poslovanje hrvatskog turističkog sektora"
+author: "Pačići"
+date: "2022-12-06"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, include = FALSE}
+#dplyr za funkcije filter i %>%
+#install.packages("multcomp")
+library(dplyr)
+library(bootstrap)
+library(fullfact)
+library(car)
+library(multcomp)
+
+source("mobilnost_turista_functions.R")
+```
+
+# Učitavanje i obrada podataka
+
+Učitavanje svih potrebnih podataka i obrada istih, uklonjene su stršeće vrijednosti iz podataka o prometu za domaći i strani promet na graničnim prijelazima kako bi dobili jasniju sliku podataka.
+
+Učitavanje cijena i fundamenata četiri velika poduzeća u Hrvatskoj i cijene indeksa CROBEXturist Zagrebačke burze.
+
+```{r, include = FALSE}
+#cijene
+
+#CROBEXturist Zagrebačka burza
+crobex = read.csv("podaci/cijene/CROBEXturist.csv")
+crobex$Date = as.Date(crobex$Date, "%Y-%m-%d") 
+
+#Arena Hospitality Group d.d.
+arnt = read.csv("podaci/cijene/ARNT.csv")
+arnt$Date = as.Date(arnt$Date, "%Y-%m-%d")
+
+#Imperial Riviera d.d
+himr = read.csv("podaci/cijene/HIMR.csv")
+himr$Date = as.Date(himr$Date, "%Y-%m-%d")
+
+#Maistra d.d.
+mais = read.csv("podaci/cijene/MAIS.csv")
+mais$Date = as.Date(mais$Date, "%Y-%m-%d")
+
+#Valamar Riviera d.d.
+rivp = read.csv("podaci/cijene/RIVP.csv")
+rivp$Date = as.Date(rivp$Date, "%Y-%m-%d")
+
+#fundamenti
+
+#Arena Hospitality Group d.d.
+arnt_fund = read.csv("podaci/fundamenti/ARNT_fundamenti.csv")
+arnt_fund$Published = as.Date(arnt_fund$Published, "%Y-%m-%d")
+
+arnt_sales_ext = read.csv("podaci/fundamenti/ARNT_sales_extended.csv")
+
+#Imperial Riviera d.d
+himr_fund = read.csv("podaci/fundamenti/HIMR_fundamenti.csv")
+himr_fund$Published = as.Date(himr_fund$Published, "%Y-%m-%d")
+
+#Maistra d.d.
+mais_fund = read.csv("podaci/fundamenti/MAIS_fundamenti.csv")
+mais_fund$Published = as.Date(mais_fund$Published, "%Y-%m-%d")
+
+#Valamar Riviera d.d.
+rivp_fund = read.csv("podaci/fundamenti/RIVP_fundamenti.csv")
+rivp_fund$Published = as.Date(rivp_fund$Published, "%Y-%m-%d")
+```
+
+Učitavanje podataka o dnevnom ulasku i izlasku turista iz Hrvatske, podijeljeno po vrsti graničnog prijelaza.
+
+```{r}
+domaci_ulaz <- read_promet("podaci/domaci_promet/domaci_ulaz_putnici.csv")
+domaci_izlaz <- read_promet("podaci/domaci_promet/domaci_izlaz_putnici.csv")
+
+strani_ulaz <- read_promet("podaci/strani_promet/strani_ulaz_putnici.csv")
+strani_izlaz <- read_promet("podaci/strani_promet/strani_izlaz_putnici.csv")
+
+domaci_ulaz$Dan <- factor(domaci_ulaz$Dan, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+domaci_izlaz$Dan <- factor(domaci_izlaz$Dan, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+strani_ulaz$Dan <- factor(strani_ulaz$Dan, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+strani_izlaz$Dan <- factor(strani_izlaz$Dan, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+
+
+#Uklanjanje Outliera u prometu
+domaci_ulaz <- subset(domaci_ulaz, domaci_ulaz$UKUPNO < 1e6)
+domaci_izlaz <- subset(domaci_izlaz, domaci_izlaz$UKUPNO < 1e6)
+
+strani_ulaz <- subset(strani_ulaz, strani_ulaz$UKUPNO < 1e6)
+strani_izlaz <- subset(strani_izlaz, strani_izlaz$UKUPNO < 1e6)
+
+#za rijecni promet uocavamo jedan drasticni outlier > 2000, pogledajmo datum kad je to bilo (oko 3000 ljudi i nije toliko nerealno) 2013-12-04 brisemo ovaj podatak jer jako odstupa od ostalih
+domaci_ulaz <- subset(domaci_ulaz, domaci_ulaz$Riječni < 2000)
+domaci_izlaz <- subset(domaci_izlaz, domaci_izlaz$Riječni < 2000)
+
+strani_ulaz <- subset(strani_ulaz, strani_ulaz$Riječni < 2000)
+strani_izlaz <- subset(strani_izlaz, strani_izlaz$Riječni < 2000)
+
+#za pomorski nekoliko podataka koji odstupaju, realni su ali ih micemo da jasnije vidimo kompletnu sliku
+domaci_ulaz <- subset(domaci_ulaz, domaci_ulaz$Pomorski < 1000)
+domaci_izlaz <- subset(domaci_izlaz, domaci_izlaz$Pomorski < 1000)
+```
+
+# Analiza podataka o dnevnom prometu preko graničnih prijelaza
+
+## Uspoređujemo strani ulaz po godinama u periodu od zadnje 4 godine (2019. - 2022.)
+
+```{r}
+promet <- strani_ulaz
+par(mfrow = c(2, 2))
+plot(UKUPNO ~ X, data = subset(promet, promet[, "Godina"] == 2019), type = "l", xlab = "Datum", ylab = "Strani ulaz", main = "2019")
+plot(UKUPNO ~ X, data = subset(promet, promet[, "Godina"] == 2020), type = "l", xlab = "Datum", ylab = "Strani ulaz", main = "2020")
+plot(UKUPNO ~ X, data = subset(promet, promet[, "Godina"] == 2021), type = "l", xlab = "Datum", ylab = "Strani ulaz", main = "2021")
+plot(UKUPNO ~ X, data = subset(promet, promet[, "Godina"] == 2022), type = "l", xlab = "Datum", ylab = "Strani ulaz", main = "2022")
+
+print(max(subset(promet, promet[, "Godina"] == 2019)$UKUPNO))
+print(max(subset(promet, promet[, "Godina"] == 2020)$UKUPNO))
+print(max(subset(promet, promet[, "Godina"] == 2021)$UKUPNO))
+print(max(subset(promet, promet[, "Godina"] == 2022)$UKUPNO))
+```
+
+Vidimo nagli pad uzrokovan zatvaranjem granica početkom covid pandemije u 2020. godini. Također u vrhuncu sezone 2020. godine imamo 3 puta manje turista nego 2019. godine. U 2021. i 2022. vidimo lagani oporavak, međutim vrhunci u 2021. i 2022. su redom manji za 17% i 10% nego u 2019. godini.
+
+## Postoji li razlika među vrstama graničnih prijelaza te među različitim danima u tjednu ili mjesecima
+
+Plotamo domaći i strani ulaz i izlaz po mjesecima i danima za ukupan promet i posebno za svaku vrstu prometa.
+
+## Ukupni promet
+
+```{r}
+
+par(mfrow = c(1, 2))
+
+#Domaći ulaz turista po mjesecu
+boxplot(domaci_ulaz$UKUPNO ~ domaci_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći ulaz turista po mjesecu")
+means <- tapply(domaci_ulaz$UKUPNO, domaci_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po mjesecu
+boxplot(domaci_izlaz$UKUPNO ~ domaci_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći izlaz turista po mjesecu")
+means <- tapply(domaci_izlaz$UKUPNO, domaci_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+par(mfrow = c(1, 2))
+
+#Strani ulaz turista po mjesecu
+boxplot(strani_ulaz$UKUPNO ~ strani_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani ulaz turista po mjesecu")
+means <- tapply(strani_ulaz$UKUPNO, strani_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po mjesecu
+boxplot(strani_izlaz$UKUPNO ~ strani_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani izlaz turista po mjesecu")
+means <- tapply(strani_izlaz$UKUPNO, strani_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+par(mfrow = c(1, 2))
+
+#Domaći ulaz turista po danima
+boxplot(domaci_ulaz$UKUPNO ~ domaci_ulaz$Dan, xlab = "Dan", ylab = "Tourists", main="Domaći ulaz turista po danima")
+means <- tapply(domaci_ulaz$UKUPNO, domaci_ulaz$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po danima
+boxplot(domaci_izlaz$UKUPNO ~ domaci_izlaz$Dan, xlab = "Dan", ylab = "Tourists", main="Domaći izlaz turista po danima")
+means <- tapply(domaci_izlaz$UKUPNO, domaci_izlaz$Dan, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Iz podataka jasno vidimo najveće prosjeke u 7. i 8. mjesecu u domaćem i stranom prometu te da su ulaz i izlaz turista najveći subotom.
+
+7. i 8. mjesec smo uzeli kao sezonu i plotali promet po danu tijekom ta dva mjeseca.
+
+### Ukupni promet u sezoni
+
+```{r}
+sezona = c("07", "08")
+
+#strani sezona
+strani_ulaz_sezona <- subset(strani_ulaz, strani_ulaz$Mjesec %in% sezona)
+strani_izlaz_sezona <- subset(strani_izlaz, strani_izlaz$Mjesec %in% sezona)
+
+par(mfrow = c(1, 2))
+
+#Strani ulaz turista po danima za 7. i 8. mjesec
+boxplot(strani_ulaz_sezona$UKUPNO ~ strani_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani ulaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_ulaz_sezona$UKUPNO, strani_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po danima za 7. i 8. mjesec
+boxplot(strani_izlaz_sezona$UKUPNO ~ strani_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani izlaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_izlaz_sezona$UKUPNO, strani_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+#vidimo po danima da je ulaz najveci u petak, subotu i nedjelju (malo veci brojevi za sub i ned)
+#izlaz daleko najveci u subotu i nedjelju
+
+
+```
+
+Vidimo po danima da je ulaz turista najveći u petak, subotu i nedjelju (malo veći brojevi subotom i nedjeljom), dok je izlaz daleko najveći u subotu i nedjelju.
+
+## Željeznički promet
+
+```{r}
+
+par(mfrow = c(2, 2))
+
+#Domaći ulaz turista po mjesecima
+boxplot(domaci_ulaz$Željeznički ~ domaci_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći ulaz turista po mjesecima")
+means <- tapply(domaci_ulaz$Željeznički, domaci_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po mjesecima
+boxplot(domaci_izlaz$Željeznički ~ domaci_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći izlaz turista po mjesecima")
+means <- tapply(domaci_izlaz$Željeznički, domaci_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani ulaz turista po mjesecima"
+boxplot(strani_ulaz$Željeznički ~ strani_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani ulaz turista po mjesecima")
+means <- tapply(strani_ulaz$Željeznički, strani_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po mjesecima
+boxplot(strani_izlaz$Željeznički ~ strani_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani izlaz turista po mjesecima")
+means <- tapply(strani_izlaz$Željeznički, strani_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+par(mfrow = c(1, 2))
+
+#Domaći ulaz turista po danima
+boxplot(domaci_ulaz$Željeznički ~ domaci_ulaz$Dan, xlab = "Dan", ylab = "Tourists", main="Domaći ulaz turista po danima")
+means <- tapply(domaci_ulaz$Željeznički, domaci_ulaz$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po danima
+boxplot(domaci_izlaz$Željeznički ~ domaci_izlaz$Dan, xlab = "Dan", ylab = "Tourists", main="Domaći izlaz turista po danima")
+means <- tapply(domaci_izlaz$Željeznički, domaci_izlaz$Dan, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Najveći prosjeci su u 7. i 8. mjesecu i u domaćem i u stranom prometu, izraženije u stranom. Također, prosinac i siječanj su malo bolji od listopada, studenog, veljače i ožujka. Nema značajne razlike po danima u domaćem prometu.
+
+### Željeznički promet u sezoni
+
+```{r}
+sezona = c("07", "08")
+
+#strani sezona
+strani_ulaz_sezona <- subset(strani_ulaz, strani_ulaz$Mjesec %in% sezona)
+strani_izlaz_sezona <- subset(strani_izlaz, strani_izlaz$Mjesec %in% sezona)
+
+par(mfrow = c(1, 2))
+
+#Strani ulaz turista po danima za 7. i 8. mjesec
+boxplot(strani_ulaz_sezona$Željeznički ~ strani_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani ulaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_ulaz_sezona$Željeznički, strani_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po danima za 7. i 8. mjesec
+boxplot(strani_izlaz_sezona$Željeznički ~ strani_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani izlaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_izlaz_sezona$Željeznički, strani_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Najveći izlaz nedjeljom.
+
+## Riječni promet
+
+```{r}
+
+par(mfrow = c(2, 2))
+
+#Domaći ulaz turista po mjesecima
+boxplot(domaci_ulaz$Riječni ~ domaci_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći ulaz turista po mjesecima")
+means <- tapply(domaci_ulaz$Riječni, domaci_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po mjesecima
+boxplot(domaci_izlaz$Riječni ~ domaci_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći izlaz turista po mjesecima")
+means <- tapply(domaci_izlaz$Riječni, domaci_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani ulaz turista po mjesecima
+boxplot(strani_ulaz$Riječni ~ strani_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani ulaz turista po mjesecima")
+means <- tapply(strani_ulaz$Riječni, strani_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po mjesecima
+boxplot(strani_izlaz$Riječni ~ strani_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani izlaz turista po mjesecima")
+means <- tapply(strani_izlaz$Riječni, strani_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Za domaći promet vidimo da je medijan blizu nule sto znaci da prometa većinom nema, vidimo nešto veće brojke od 5. do 8. mjeseca, za strani promet vidimo jednolik promet od 4. do 10. mjeseca.
+
+Sezonu smo odredili od travnja do listopada.
+
+### Riječni promet u sezoni
+
+```{r}
+sezona <- c("04", "05", "06", "07", "08", "09", "10")
+
+#strani sezona
+strani_ulaz_sezona <- subset(strani_ulaz, strani_ulaz$Mjesec %in% sezona)
+strani_izlaz_sezona <- subset(strani_izlaz, strani_izlaz$Mjesec %in% sezona)
+
+par(mfrow = c(1, 2))
+
+#Strani ulaz turista po danima u sezoni
+boxplot(strani_ulaz_sezona$Riječni ~ strani_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani ulaz turista po\n danima u sezoni")
+means <- tapply(strani_ulaz_sezona$Riječni, strani_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po danima u sezoni
+boxplot(strani_izlaz_sezona$Riječni ~ strani_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani izlaz turista po\n danima u sezoni")
+means <- tapply(strani_izlaz_sezona$Riječni, strani_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+# nedjelju komentirat
+```
+
+Zanimljiv slučaj je nedjelja, tijekom koje većinom nema prometa. Najvjerojatnije zbog toga što su nedjeljom riječni granični prijelazi zatvoreni za promet.
+
+## Cestovni promet
+
+```{r}
+
+par(mfrow = c(2, 2))
+
+#Domaći ulaz turista po mjesecima
+boxplot(domaci_ulaz$Cestovni ~ domaci_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći ulaz turista po mjesecima")
+means <- tapply(domaci_ulaz$Cestovni, domaci_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po mjesecima
+boxplot(domaci_izlaz$Cestovni ~ domaci_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći izlaz turista po mjesecima")
+means <- tapply(domaci_izlaz$Cestovni, domaci_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani ulaz turista po mjesecima
+boxplot(strani_ulaz$Cestovni ~ strani_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani ulaz turista po mjesecima")
+means <- tapply(strani_ulaz$Cestovni, strani_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izalz turista po mjesecima
+boxplot(strani_izlaz$Cestovni ~ strani_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani izlaz turista po mjesecima")
+means <- tapply(strani_izlaz$Cestovni, strani_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Iako je i za domaći i za strani vrhunac ulaza i izlaza u 7. i 8. mjesecu, u stranom prometu ti mjeseci puno više iskaču od ostalih, dok je u domaćem prometu prijelaz postupan.
+
+### Cestovni promet u sezoni
+
+```{r}
+sezona = c("07", "08")
+
+domaci_ulaz_sezona <- subset(domaci_ulaz, domaci_ulaz$Mjesec %in% sezona)
+domaci_izlaz_sezona <- subset(domaci_izlaz, domaci_izlaz$Mjesec %in% sezona)
+
+strani_ulaz_sezona <- subset(strani_ulaz, strani_ulaz$Mjesec %in% sezona)
+strani_izlaz_sezona <- subset(strani_izlaz, strani_izlaz$Mjesec %in% sezona)
+
+par(mfrow = c(1, 2))
+
+#Strani ulaz turista po danima za 7. i 8. mjesec
+boxplot(strani_ulaz_sezona$Cestovni ~ strani_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani ulaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_ulaz_sezona$Cestovni, strani_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po danima za 7. i 8. mjesec
+boxplot(strani_izlaz_sezona$Cestovni ~ strani_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani izlaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_izlaz_sezona$Cestovni, strani_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Tijekom sezone strani ulaz ima izraženi vrhunac subotom, a izlaz vikendom. Također možemo uočiti trend rasta od utorka prema vikendu.
+
+## Pomorski promet
+
+```{r}
+
+par(mfrow = c(2, 2))
+
+#Domaći ulaz turista po mjesecima
+boxplot(domaci_ulaz$Pomorski ~ domaci_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći ulaz turista po mjesecima")
+means <- tapply(domaci_ulaz$Pomorski, domaci_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po mjesecima
+boxplot(domaci_izlaz$Pomorski ~ domaci_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći izlaz turista po mjesecima")
+means <- tapply(domaci_izlaz$Pomorski, domaci_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani ulaz turista po mjesecima
+boxplot(strani_ulaz$Pomorski ~ strani_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani ulaz turista po mjesecima")
+means <- tapply(strani_ulaz$Pomorski, strani_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po mjesecima
+boxplot(strani_izlaz$Pomorski ~ strani_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani izlaz turista po mjesecima")
+means <- tapply(strani_izlaz$Pomorski, strani_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Kod domaćeg i stranog prometa vidimo normalnu razdiobu s vrhuncem u 8. mjesecu.
+
+### Pomorski promet u sezoni
+
+```{r}
+sezona = c("05", "06", "07", "08", "09", "10")
+
+domaci_ulaz_sezona <- subset(domaci_ulaz, domaci_ulaz$Mjesec %in% sezona)
+domaci_izlaz_sezona <- subset(domaci_izlaz, domaci_izlaz$Mjesec %in% sezona)
+
+par(mfrow = c(2, 2))
+
+#Domaći ulaz turista po danima za 7. i 8. mjesec
+boxplot(domaci_ulaz_sezona$Pomorski ~ domaci_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Domaći ulaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(domaci_ulaz_sezona$Pomorski, domaci_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po danima za 7. i 8. mjesec
+boxplot(domaci_izlaz_sezona$Pomorski ~ domaci_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Domaći izlaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(domaci_izlaz_sezona$Pomorski, domaci_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+
+strani_ulaz_sezona <- subset(strani_ulaz, strani_ulaz$Mjesec %in% sezona)
+strani_izlaz_sezona <- subset(strani_izlaz, strani_izlaz$Mjesec %in% sezona)
+
+#Strani ulaz turista po danima za 7. i 8. mjesec
+boxplot(strani_ulaz_sezona$Pomorski ~ strani_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani ulaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_ulaz_sezona$Pomorski, strani_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izalz turista po danima za 7. i 8. mjesec
+boxplot(strani_izlaz_sezona$Pomorski ~ strani_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani izlaz turista po danima\n za 7. i 8. mjesec")
+means <- tapply(strani_izlaz_sezona$Pomorski, strani_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Za domaći ulaz najmanji ponedjeljak i nedjelja, a izlaz najveći nedjeljom. Strani promet je nizak početkom tjedna, znatno se povećava od četvrtka i ostaje jednolik do kraja tjedna.
+
+## Zračni promet
+
+```{r}
+
+par(mfrow = c(2, 2))
+
+#Domaći ulaz turista po mjesecima
+boxplot(domaci_ulaz$Zračni ~ domaci_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći ulaz turista po mjesecima")
+means <- tapply(domaci_ulaz$Zračni, domaci_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po mjesecima
+boxplot(domaci_izlaz$Zračni ~ domaci_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Domaći izlaz turista po mjesecima")
+means <- tapply(domaci_izlaz$Zračni, domaci_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani ulaz turista po mjesecima
+boxplot(strani_ulaz$Zračni ~ strani_ulaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani ulaz turista po mjesecima")
+means <- tapply(strani_ulaz$Zračni, strani_ulaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po mjesecima
+boxplot(strani_izlaz$Zračni ~ strani_izlaz$Mjesec, xlab = "Month", ylab = "Tourists", main="Strani izlaz turista po mjesecima")
+means <- tapply(strani_izlaz$Zračni, strani_izlaz$Mjesec, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Zračni promet je pojačan od 4. do 10. mjeseca pa uzimamo taj period za sezonu. Primijetimo da u tom periodu domaći ulaz/izlaz prati uniformnu distribuciju, a 
+strani ulaz/izlaz normalnu distribuciju
+
+### Zračni promet po sezoni
+
+```{r}
+sezona = c("04", "05", "06", "07", "08", "09", "10")
+
+domaci_ulaz_sezona <- subset(domaci_ulaz, domaci_ulaz$Mjesec %in% sezona)
+domaci_izlaz_sezona <- subset(domaci_izlaz, domaci_izlaz$Mjesec %in% sezona)
+
+par(mfrow = c(1, 2))
+
+#Domaći ulaz turista po danima u sezoni
+boxplot(domaci_ulaz_sezona$Zračni ~ domaci_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Domaći ulaz turista po\n danima u sezoni")
+means <- tapply(domaci_ulaz_sezona$Zračni, domaci_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Domaći izlaz turista po danima u sezoni
+boxplot(domaci_izlaz_sezona$Zračni ~ domaci_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Domaći izlaz turista po\n danima u sezoni")
+means <- tapply(domaci_izlaz_sezona$Zračni, domaci_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+
+strani_ulaz_sezona <- subset(strani_ulaz, strani_ulaz$Mjesec %in% sezona)
+strani_izlaz_sezona <- subset(strani_izlaz, strani_izlaz$Mjesec %in% sezona)
+
+par(mfrow = c(1, 2))
+
+#Strani ulaz turista po danima u sezoni
+boxplot(strani_ulaz_sezona$Zračni ~ strani_ulaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani ulaz turista po\n danima u sezoni")
+means <- tapply(strani_ulaz_sezona$Zračni, strani_ulaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+
+#Strani izlaz turista po danima u sezoni
+boxplot(strani_izlaz_sezona$Zračni ~ strani_izlaz_sezona$Dan, xlab = "Day", ylab = "Tourists", main="Strani izlaz turista po\n danima u sezoni")
+means <- tapply(strani_izlaz_sezona$Zračni, strani_izlaz_sezona$Dan, mean)
+points(means, pch = 20, col = "orange")
+```
+
+U zračnom prometu nema puno varijacije po danima u tjednu, izuzev stranih ulazaka i izlazaka kojih ima najviše subotom.
+
+# Analiza fundamentalnih podatka turističkih tvrtki
+
+Analizirajte fundamentalne podatke turističkih tvrtki - postoje li sezonalnosti i u njima?
+
+## Vizualizacija podataka
+
+Plotamo crobex indeks i cijene dionica za arnt, himr, mais i rivp. Jedino na himr plotu ne vidimo jasno pad 2020. za vrijeme covid krize. Primjećujemo vizualno da se himr razlikuje u ponašanju od ostale 3 dionice.
+
+```{r}
+plot(crobex, type = "l", main = "crobex")
+layout(matrix(c(1, 2, 3, 4), nrow = 2, ncol = 2, byrow = TRUE))
+plot(arnt, type = "l", main = "arnt")
+plot(himr, type = "l", main = "himr")
+plot(mais, type = "l", main = "mais")
+plot(rivp, type = "l", main = "rivp")
+
+```
+Pogledajmo barplot prodaje i profita za ARNT od 2013. do 2022. godine
+```{r}
+library(ggplot2)
+library(reshape2)
+
+df_sum <- arnt_fund %>% group_by(Year) %>% summarize(Sales = sum(Sales), Earnings = sum(Earnings))
+
+df <- as.data.frame(matrix(nrow = 2 * nrow(df_sum), ncol=3))
+colnames(df) <- c("Year", "SE", "amount")
+
+for(i in 1:nrow(df_sum)){
+  df$Year[2 * (i - 1) + 1] <- df_sum$Year[i]
+  df$SE[2 * (i - 1) + 1] <- "Sales"
+  df$amount[2 * (i - 1) + 1] <- df_sum$Sales[i]
+  
+  df$Year[2 * i] <- df_sum$Year[i]
+  df$SE[2 * i] <- "Earnings"
+  df$amount[2 * i] <- df_sum$Earnings[i]
+}
+
+#crtamo barplot
+ggplot(df, aes(fill=SE, y=amount, x=Year)) +
+  geom_bar(position='dodge', stat='identity')
+```
+Vidimo trend rasta prodaje, međutim pad 2020. zbog covida, a 2021. i 2022. oporavak. Kompanija nije bila značajno profitabilna do 2017. godine. 
+
+Pogledajmo vizualno s boxplotovima prodaje u kvartalima.
+
+```{r}
+par(mfrow = c(2, 2))
+
+boxplot(arnt_fund$Sales ~ arnt_fund$Quarter, xlab = "Quarter", ylab = "Sales", main = "arnt")
+means <- tapply(arnt_fund$Sales, arnt_fund$Quarter, mean)
+points(means, pch = 20, col = "orange")
+
+boxplot(himr_fund$Sales ~ himr_fund$Quarter, xlab = "Quarter", ylab = "Sales", main = "himr")
+means <- tapply(himr_fund$Sales, himr_fund$Quarter, mean)
+points(means, pch = 20, col = "orange")
+
+boxplot(mais_fund$Sales ~ mais_fund$Quarter, xlab = "Quarter", ylab = "Sales", main = "mais")
+means <- tapply(mais_fund$Sales, mais_fund$Quarter, mean)
+points(means, pch = 20, col = "orange")
+
+boxplot(rivp_fund$Sales ~ rivp_fund$Quarter, xlab = "Quarter", ylab = "Sales", main = "rivp")
+means <- tapply(rivp_fund$Sales, rivp_fund$Quarter, mean)
+points(means, pch = 20, col = "orange")
+```
+
+Očekivano prodaje su najveće u trećem kvartalu koji odgovara periodu sezone.
+
+## Analiza razlikovanja kvartala prema ostvarenim prihodima od prodaje
+
+Kao istraživačko pitanje smo testirali postoji li razlika izmedu kvartala prema ostvarenim prihodima prodaje, kao podatke koristimo prošireni skup podataka za poduzeće Arena Hospitality Group d.d. koji uključuje podatke od 4Q 2002.
+
+Vizualizacija prihoda po kvartalima za ARNT:
+
+```{r}
+summary(arnt_sales_ext$Sales)
+summary(arnt_sales_ext$Sales[arnt_sales_ext$Quarter==1])
+summary(arnt_sales_ext$Sales[arnt_sales_ext$Quarter==2])
+summary(arnt_sales_ext$Sales[arnt_sales_ext$Quarter==3])
+summary(arnt_sales_ext$Sales[arnt_sales_ext$Quarter==4])
+
+boxplot(arnt_sales_ext$Sales ~ arnt_sales_ext$Quarter, xlab="Quarter", ylab="Sales", main="Prihodi prema kvartalima")
+
+plot(arnt_sales_ext$Year[arnt_sales_ext$Quarter==1], arnt_sales_ext$Sales[arnt_sales_ext$Quarter==1], xlab="Year", ylab="Sales", col = "red", ylim = c(5000000, 500000000), type = "l")
+lines(arnt_sales_ext$Year[arnt_sales_ext$Quarter==2], arnt_sales_ext$Sales[arnt_sales_ext$Quarter==2], xlab="Year", ylab="Sales", col = "blue")
+lines(arnt_sales_ext$Year[arnt_sales_ext$Quarter==3], arnt_sales_ext$Sales[arnt_sales_ext$Quarter==3], xlab="Year", ylab="Sales", col = "orange")
+lines(arnt_sales_ext$Year[arnt_sales_ext$Quarter==4], arnt_sales_ext$Sales[arnt_sales_ext$Quarter==4], xlab="Year", ylab="Sales", col = "green")
+legend(2005, 4e+08, legend = c("Quarter 1", "Quarter 2", "Quarter 3", "Quarter 4") , col = c("red", "blue", "orange", "green"), lty = 1, cex = 0.8)
+```
+
+Uočava se očekivano najveći prihodi u 3. kvartalu, zatim 2., a 1. i 4. su otprilike jednaki na dnu. Prihodi u 3. kvartalu jednoliko rastu kroz godine, a u ostalima su držali prihode na otprilike istoj razini do 2017. godine kada se dogodio nagli skok. Također se jasno vidi period covid pandemije 2020. godine, kada su prihodi naglo pali.
+
+## ANOVA
+
+### Nezavisnost
+
+Testiramo postoji li veza između prodaje u drugom i trecem kvartalu.
+
+```{r}
+model <- lm(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3] ~ arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2])
+plot(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2], arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3], xlab = "Quarter 2 Sales", ylab = "Quarter 3 Sales")
+abline(model)
+summary(model)
+plot(model)
+```
+
+Vidimo korelaciju između prodaje u drugom i trećem kvartalu, tj. nemamo nezavisnost za ANOVU.
+
+### Koristit ćemo logaritam za transformaciju podataka
+
+### Normalnost
+
+Provodimo test normalnosti podataka.
+
+```{r}
+require(nortest)
+
+lillie.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 1]))
+lillie.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2]))
+lillie.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3]))
+lillie.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 4]))
+
+par(mfrow = c(2, 2))
+hist(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 1]), xlab = "log(Sales)", main = "Quarter 1")
+hist(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2]), xlab = "log(Sales)", main = "Quarter 2")
+hist(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3]), xlab = "log(Sales)", main = "Quarter 3")
+hist(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 4]), xlab = "log(Sales)", main = "Quarter 4")
+
+anova <- aov(Sales ~ factor(Quarter), data = arnt_sales_ext)
+```
+
+Nemamo dovoljno malu p-vrijednost da bi negirali normalnost podataka za drugi i treći kvartal, međutim u 1. i 4. kvartalu odbacujemo normalnost.
+
+### Jednakost varijanci
+
+```{r}
+boxplot(log(Sales) ~ factor(Quarter), data = arnt_sales_ext)
+
+bartlett.test(log(arnt_sales_ext$Sales) ~ arnt_sales_ext$Quarter)
+
+var(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 1]))
+var(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2]))
+var(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3]))
+var(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 4]))
+```
+
+Nemamo dovoljno malu p-vrijednost da bi odbacili jednakost varijanci.
+
+### Provodimo ANOVA-u
+
+```{r}
+anova <- aov(log(Sales) ~ factor(Quarter), data = arnt_sales_ext)
+summary(anova)
+```
+
+p-value vrlo mali, na visokoj razini značajnosti odbacujemo hipotezu da su sve očekivane vrijednosti jednake.
+
+### Post-hoc test
+
+Uspoređujemo u parovima kvartale, vidimo da se treći značajno razlikuje od svih ostalih.
+
+```{r}
+post_test <- TukeyHSD(anova, conf.level=.95)
+print(post_test)
+plot(post_test)
+```
+
+## T test o jednakosti srednjih vrijednosti za drugi i treci kvartal
+
+Vidimo da se drugi i treći kvartal razlikuju, pa provodimo t-test s ciljem dokazivanja da je prodaja u trećem kvartalu barem dvostruko veća od prodaje u drugom kvartalu.
+
+### Normalnost
+
+```{r}
+lillie.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2]))
+lillie.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3]))
+
+par(mfrow = c(1, 2))
+hist(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2]), xlab = "log(Sales)", main = "Quarter 2")
+hist(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3]), xlab = "log(Sales)", main = "Quarter 3")
+```
+
+Ne odbacujemo normalnost.
+
+### Jednakost varijanci
+
+```{r}
+boxplot(log(Sales) ~ factor(Quarter), data = subset(arnt_sales_ext, arnt_sales_ext$Quarter == 2 | arnt_sales_ext$Quarter == 3))
+bartlett.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2 | arnt_sales_ext$Quarter == 3]) ~ arnt_sales_ext$Quarter[arnt_sales_ext$Quarter == 2 | arnt_sales_ext$Quarter == 3])
+
+var(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2]))
+var(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3]))
+```
+
+Ne odbacujemo jednakost varijanci.
+
+### Provodimo t-test
+
+```{r}
+t.test(log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 3]), 1.049* log(arnt_sales_ext$Sales[arnt_sales_ext$Quarter == 2]), alternative = "greater")
+```
+
+Na razini značajnosti 5% zaključujemo da je srednja vrijednost prodaje u 3. kvartalu barem e\^1.049 = 2.85 veća nego u 2. kvartalu.
+
+# Veza prometa po različitim graničnim prijelazima s fundamentima turističkih poduzeća
+
+Provodimo linearnu regresiju kako bi vidjeli postoji li veza između prometa na graničnim prijelazima i fundamenata ARNT.
+
+```{r}
+x = list()
+promet = strani_ulaz
+fund <- arnt_fund
+for(i in 1:nrow(fund)){
+  p <- get_promet(promet, fund$Year[i], fund$Quarter[i])
+  x <- append(x, p)
+}
+
+fund$Promet <- unlist(x)
+model <- lm(Sales ~ Promet, data = fund)
+
+plot(fund$Promet, fund$Sales)
+
+abline(model)
+summary(model)
+plot(model) 
+```
+
+R\^2 = 0.8, p_value = 1e-14 nam govori da imamo značajnu vezu što možemo i vidjeti na grafu.
+
+# Veza dnevnog kretanja cijene indeksa CROBEXturist i kretanja turista preko hrvatskih granica
+
+Provodimo linearnu regresiju kako bi vidjeli postoji li veza između dnevnog kretanja turista preko hrvatskih granica i cijene CROBEXturist indeksa.
+
+```{r}
+strani_ulaz$Date <- as.Date(strani_ulaz$X)
+strani_izlaz$Date <- as.Date(strani_izlaz$X)
+
+cijena_promet <- merge(crobex, strani_ulaz, by="Date")
+cijena_promet <- merge(cijena_promet, strani_izlaz, by="Date")
+
+summary(cijena_promet)
+
+#Veza između cijene i ulaza turista
+plot(cijena_promet$Price, cijena_promet$UKUPNO.x, xlab="Stock Price", ylab="Tourist Traffic (Entry)", main="Veza između cijene i ulaza turista")
+
+#Veza između cijene i izlaza turista
+plot(cijena_promet$Price, cijena_promet$UKUPNO.y, xlab="Stock Price", ylab="Tourist Traffic (Exit)", main="Veza između cijene i izlaza turista")
+
+#Veza između cijene i ukupnog prometa turista
+plot(cijena_promet$Price, cijena_promet$UKUPNO.x + cijena_promet$UKUPNO.y, xlab = "Stock price", ylab = "Tourist traffic", main="Veza između cijene i ukupnog prometa turista")
+
+```
+
+Iz vizualizacije ne vidimo moguću korelaciju.
+
+Implementacija linearne regresije sa razinom značajnosti od 5%
+
+```{r}
+model <- lm(cijena_promet$Price ~ cijena_promet$UKUPNO.x + cijena_promet$UKUPNO.y)
+summary(model)
+plot(model)
+```
+
+Možemo zaključiti da nema linearne korelacije, što smo mogli i pretpostaviti.
+
+Također smo testirali postoji li veza između day to day cijene indeksa i količine ulaza stranih turista. Pretpostavka je da će veći broj ulaza dovesti do veće špekulacije, te do većeg trgovanja indeksom, što će dovesti do većih zamaha u cijeni.
+
+### Analiza veze izmedu ulaza i day to day promjene cijene
+
+```{r}
+cijena_promet_ulaz <- merge(crobex, strani_ulaz, by="Date")
+change <- rep(NA, nrow(cijena_promet_ulaz))
+
+
+for (i in 2:nrow(cijena_promet_ulaz)) {
+  change[i] <- cijena_promet_ulaz$Price[i] - cijena_promet_ulaz$Price[i - 1]
+}
+
+cijena_promet_ulaz$change <- change
+
+plot(cijena_promet_ulaz$UKUPNO, cijena_promet_ulaz$change, xlab = "Tourist entry", ylab = "Day-to-day change in stock price", main="Veza između promjene cijene i ulaza turista")
+
+# Fit a linear model to the data and summarize the results
+model <- lm(change ~ UKUPNO, data = cijena_promet_ulaz)
+summary(model)
+
+
+cor(cijena_promet_ulaz$UKUPNO, cijena_promet_ulaz$change)
+```
+
+```{r}
+plot(model)
+```
+
+I tu smo dokazali da nema korelacije.
+
+Pokušaj logističke regresije
+```{r}
+source("mobilnost_turista_functions.R")
+library("blorr")
+
+stock = arnt
+fund = arnt_fund
+
+perc <- 10
+num_shares <- 5128721
+
+layout(matrix(c(1:9), nrow = 3, ncol = 3, byrow = TRUE))
+plot(subset(stock, stock$Date >= "2013-01-01" & stock$Date <= "2013-12-31"), type = "l", main = "2013")
+plot(subset(stock, stock$Date >= "2014-01-01" & stock$Date <= "2014-12-31"), type = "l", main = "2014")
+plot(subset(stock, stock$Date >= "2015-01-01" & stock$Date <= "2015-12-31"), type = "l", main = "2015")
+plot(subset(stock, stock$Date >= "2016-01-01" & stock$Date <= "2016-12-31"), type = "l", main = "2016")
+plot(subset(stock, stock$Date >= "2017-01-01" & stock$Date <= "2017-12-31"), type = "l", main = "2017")
+plot(subset(stock, stock$Date >= "2018-01-01" & stock$Date <= "2018-12-31"), type = "l", main = "2018")
+plot(subset(stock, stock$Date >= "2019-01-01" & stock$Date <= "2019-12-31"), type = "l", main = "2019")
+plot(subset(stock, stock$Date >= "2020-01-01" & stock$Date <= "2020-12-31"), type = "l", main = "2020")
+plot(subset(stock, stock$Date >= "2021-01-01" & stock$Date <= "2021-12-31"), type = "l", main = "2021")
+
+a <- list()
+b <- list()
+c <- list()
+d <- list()
+d1 <- list()
+d2 <- list()
+d3 <- list()
+d4 <- list()
+e <- list()
+r <- list()
+
+start_year = 2013
+end_year = 2021
+
+logreg_data <- data.frame(matrix(nrow = (end_year - start_year + 1) * 4, ncol = 0))
+
+for(y in start_year:end_year){
+  for(q in 1:4){
+    a <- append(a, avg_price(stock, y, q)) #prosjecna cijena dionice u godini / kvartalu
+    #a <- append(a, 0.5 * (avg_price(stock, y, 1) + avg_price(stock, y, 2)))
+    
+    b <- append(b, sum(fund$Sales[fund["Year"] == y & fund["Quarter"] == q])) # prodaja u godini / kvartalu
+    #b <- append(b, sum(fund$Sales[fund["Year"] == y & (fund["Quarter"] == q | fund["Quarter"] == (q + 1))]))
+    #b <- append(b, sum(fund$Sales[fund["Year"] == y]))
+    #b <- append(b, sum(fund$Sales[fund["Year"] == y & (fund["Quarter"] == 1 | fund["Quarter"] == 2)]))
+    
+    c <- append(c, sum(fund$Earnings[fund["Year"] == y & fund["Quarter"] == q])) # earningsi u godini / kvartalu
+    #c <- append(c, sum(fund$Earnings[fund["Year"] == y & (fund["Quarter"] == q | fund["Quarter"] == (q + 1))]))
+    #c <- append(c, sum(fund$Earnings[fund["Year"] == y & (fund["Quarter"] == 1 | fund["Quarter"] == 2)]))
+    
+    #d <- append(d, 0.5 * (avg_price(stock, y, 1) + avg_price(stock, y, 2)) / (sum(fund$Sales[fund["Year"] == y & (fund["Quarter"] == 1 | fund["Quarter"] == 2)])))
+    d <- append(d, q)
+    d1 <- append(d1, as.integer(q == 1))
+    d2 <- append(d2, as.integer(q == 2))
+    d3 <- append(d3, as.integer(q == 3))
+    d4 <- append(d4, as.integer(q == 4))
+    
+    e <- append(e, y)
+    
+    next_y <- y
+    if(q == 4){
+      next_y <- y + 1
+    }
+    next_q <- q + 1
+    if(next_q == 5){
+      next_q <- 1
+    }
+    
+    #r <- append(r, check(stock, perc, next_y, next_q)) #je li narasla
+    #print(check(stock, perc, y, q + 2))
+    r <- append(r, check(stock, perc, next_y, next_q))
+    #r <- append(r, check(stock, perc, y, q + 2))
+    #r <- append(r, check(stock, perc, y, 3))
+    #print(check(stock, perc, y))
+    #print(sum(fund$Earnings[fund["Year"] == y]))
+  }
+}
+
+#print(r)
+
+logreg_data["A"] <- unlist(a)
+logreg_data["B"] <- unlist(b)
+logreg_data["C"] <- unlist(c)
+logreg_data["D"] <- unlist(d)
+logreg_data["D1"] <- unlist(d1)
+logreg_data["D2"] <- unlist(d2)
+logreg_data["D3"] <- unlist(d3)
+logreg_data["D4"] <- unlist(d4)
+logreg_data["E"] <- unlist(e)
+logreg_data["R"] <- unlist(r)
+
+require(caret)
+
+logreg.mdl.6 = glm(R ~ A + B + C + D2 + D3 + E + I(A / B) + I(A / C), data = logreg_data, family = binomial())
+logreg.mdl.7 = glm(R ~ B + C + D2 + D3 + E + I(A / B) + I(A / C), data = logreg_data, family = binomial())
+logreg.mdl.8 = glm(R ~ B + C + D2 + D3 + E + I(A / B), data = logreg_data, family = binomial()) #
+logreg.mdl.9 = glm(R ~ B + C + D3 + I(A / B), data = logreg_data, family = binomial())
+
+logreg.mdl = glm(R ~ A + B + C + D + E + I(A / B) + I(A / C), data = logreg_data, family = binomial())
+logreg.mdl.2 = glm(R ~ A + C + E + I(A / B) + I(A / C), data = logreg_data, family = binomial())
+logreg.mdl.3 = glm(R ~ A + C + I(A / B) + I(A / C), data = logreg_data, family = binomial())
+logreg.mdl.4 = glm(R ~ A + C + I(A / B), data = logreg_data, family = binomial())
+logreg.mdl.5 = glm(R ~ A + C, data = logreg_data, family = binomial())
+
+summary(logreg.mdl.6)
+summary(logreg.mdl.7)
+summary(logreg.mdl.8)
+summary(logreg.mdl.9)
+summary(logreg.mdl)
+summary(logreg.mdl.2)
+summary(logreg.mdl.3)
+summary(logreg.mdl.4)
+summary(logreg.mdl.5)
+
+anova(logreg.mdl.6, logreg.mdl.7, test = "LRT") #mala razlika devijance, dopustamo
+anova(logreg.mdl.7, logreg.mdl.8, test = "LRT") #mala razlika devijance, dopustamo
+anova(logreg.mdl.8, logreg.mdl.9, test = "LRT") #znacajno odstupanje, ne dopustamo, tj. ostaje 8. model
+
+anova(logreg.mdl, logreg.mdl.2, test = "LRT") #mala razlika devijance, dopustamo
+anova(logreg.mdl.2, logreg.mdl.3, test = "LRT") #mala razlika devijance, dopustamo
+anova(logreg.mdl.3, logreg.mdl.4, test = "LRT") #mala razlika devijance, dopustamo
+anova(logreg.mdl.4, logreg.mdl.5, test = "LRT") #znacajno odstupanje, ne dopustamo, tj. ostaje 4. model
+
+logreg.mdl = logreg.mdl.4
+logreg.mdl.2 = logreg.mdl.8
+
+summary(logreg.mdl)
+summary(logreg.mdl.2)
+
+Rsq = 1 - logreg.mdl$deviance/logreg.mdl$null.deviance
+Rsq
+
+Rsq = 1 - logreg.mdl.2$deviance/logreg.mdl$null.deviance
+Rsq
+
+blr_model_fit_stats(logreg.mdl)
+
+blr_model_fit_stats(logreg.mdl.2)
+
+anova(logreg.mdl, logreg.mdl.2, test = "LRT")
+
+#blr_test_hosmer_lemeshow(logreg.mdl)
+
+#blr_roc_curve(blr_gains_table(logreg.mdl))
+
+###
+#Predicted_data <- data.frame(D = seq(
+  #min(logreg_data["D"]), max(logreg_data["D"]), len=500))
+ 
+ #Fill predicted values using regression model
+#Predicted_data$R = predict(
+#  logreg.mdl, Predicted_data, type="response")
+ 
+ #Plot Predicted data and original data points
+#dev.new(width=5, height=4)
+#plot(R ~ D, data = logreg_data)
+#lines(R ~ D, Predicted_data, lwd = 2, col="green")
+###
+
+#plot(x, r)
+#plot(1:length(x), x)
+```
+```{r}
+#fund <- subset(arnt_sales_ext, arnt_sales_ext$Year <= 2018 | (arnt_sales_ext$Year == 2019 & arnt_sales_ext$Quarter <= 3))
+fund <- subset(arnt_sales_ext, arnt_sales_ext$Year <= 2019 & arnt_sales_ext&Year >= 2003)
+#fund <- subset(arnt_sales_ext, arnt_sales_ext$Year <= 2018 | (arnt_sales_ext$Year == 2019 & arnt_sales_ext$Quarter <= 3))
+#fund <- arnt_sales_ext
+
+#model <- lm(fund$Sales[fund$Quarter == 3] ~ fund$Sales[fund$Quarter == 1] + fund$Sales[fund$Quarter == 2])
+model <- lm(fund$Sales[fund$Quarter == 4] ~ fund$Sales[fund$Quarter == 2])
+#model <- lm(fund$Sales[fund$Quarter == 2] ~ fund$Sales[fund$Quarter == 1])
+#model <- lm(fund$Sales[fund$Quarter == 1] ~ fund$Sales[fund$Quarter == 2] + fund$Sales[fund$Quarter == 3] + fund$Sales[fund$Quarter == 4])
+
+#plot(fund$Sales[fund$Quarter == 3], fund$Sales[fund$Quarter == 1])
+#abline(model)
+
+summary(model)
+plot(model)
+```
